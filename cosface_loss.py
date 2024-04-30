@@ -2,6 +2,7 @@
 # Based on https://github.com/MuggleWang/CosFace_pytorch/blob/master/layer.py
 
 import torch
+import math
 import torch.nn as nn
 from torch.nn import Parameter
 
@@ -11,6 +12,34 @@ def cosine_sim(x1: torch.Tensor, x2: torch.Tensor, dim: int = 1, eps: float = 1e
     w1 = torch.norm(x1, 2, dim)
     w2 = torch.norm(x2, 2, dim)
     return ip / torch.ger(w1, w2).clamp(min=eps)
+
+
+class ArcFace(torch.nn.Module):
+    """ ArcFace (https://arxiv.org/pdf/1801.07698v1.pdf):
+    """
+    def __init__(self, in_features: int, out_features: int, s=64.0, margin=0.5):
+        super(ArcFace, self).__init__()
+        self.s = s
+        self.margin = margin
+        self.weight = Parameter(torch.Tensor(out_features, in_features))
+        nn.init.xavier_uniform_(self.weight)
+
+
+    def forward(self, inputs: torch.Tensor, label: torch.Tensor):
+        cosine = cosine_sim(inputs, self.weight)
+        
+        index = torch.where(label != -1)[0]
+        target_logit = cosine[index, label[index].view(-1)]
+
+        with torch.no_grad():
+            target_logit.arccos_()
+            cosine.arccos_()
+            final_target_logit = target_logit + self.margin
+            cosine[index, label[index].view(-1)] = final_target_logit
+            cosine.cos_()
+        cosine = cosine * self.s   
+        return cosine
+
 
 
 class MarginCosineProduct(nn.Module):
